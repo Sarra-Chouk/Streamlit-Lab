@@ -1,3 +1,5 @@
-streamlit 
-numpy 
+streamlit
+numpy
 scikit-learn
+nltk
+gensim

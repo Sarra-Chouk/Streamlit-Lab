@@ -1,35 +1,53 @@
 import streamlit as st
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
+from gensim.models import Word2Vec
+from gensim.utils import simple_preprocess
 
-# Load precomputed document embeddings (Assuming embeddings.npy and documents.txt exist)
-embeddings = np.load("embeddings.npy")
+st.set_page_config(page_title="Information Retrieval", page_icon="🔎")
 
-with open("documents.txt", "r", encoding="utf-8") as f:
-    documents = f.readlines()
+st.title("🔎 Information Retrieval System")
+st.subheader("Search Reuters News Articles Using Word Embeddings")
 
-def retrieve_top_k(query_embedding, embeddings, k=10):
-    """Retrieve top-k most similar documents using cosine similarity."""
-    similarities = cosine_similarity(query_embedding.reshape(1, -1), embeddings)[0]
-    top_k_indices = similarities.argsort()[-k:][::-1]
-    
-    return [(documents[i], similarities[i]) for i in top_k_indices]
+@st.cache_data
+def load_data():
+    embeddings = np.load("embeddings.npy")
+    with open("documents.txt", "r", encoding="utf-8") as f:
+        documents = f.readlines()
+    return embeddings, documents
 
-# Streamlit UI
-st.title("Information Retrieval using Document Embeddings")
+@st.cache_resource
+def load_model():
+    return Word2Vec.load("w2v.model")
 
-# Input query
-query = st.text_input("Enter your query:")
+embeddings, documents = load_data()
+w2v = load_model()
 
-# Load or compute query embedding (Placeholder: Replace with actual embedding model)
-def get_query_embedding(query):
-    return np.random.rand(embeddings.shape[1]) # Replace with actual embedding function
+st.write("Loading Reuters dataset...")
+st.write(f"Loaded {len(documents)} documents from Reuters.")
+st.write("Training Word2Vec model...")
+st.write(f"Vocabulary size: {len(w2v.wv.index_to_key)}")
 
-if st.button("Search"):
-    query_embedding = get_query_embedding(query)
-    results = retrieve_top_k(query_embedding, embeddings)
+def embed_text(text: str, model: Word2Vec):
+    tokens = simple_preprocess(text)
+    vecs = [model.wv[t] for t in tokens if t in model.wv]
+    if not vecs:
+        return np.zeros(model.vector_size, dtype=np.float32)
+    return np.mean(vecs, axis=0).astype(np.float32)
 
-    # Display results   
+def retrieve_top_k(query_vec, embeddings, k=10):
+    sims = cosine_similarity(query_vec.reshape(1, -1), embeddings)[0]
+    top_idx = sims.argsort()[-k:][::-1]
+    return [(documents[i], float(sims[i])) for i in top_idx]
+
+query = st.text_input("Enter your search query:")
+
+if st.button("Search") and query.strip():
+    qvec = embed_text(query, w2v)
+    results = retrieve_top_k(qvec, embeddings, k=10)
+
     st.write("### Top 10 Relevant Documents:")
     for doc, score in results:
-        st.write(f"- **{doc.strip()}** (Score: {score:.4f})")
+        st.write(f"- (Score: {score:.4f}) {doc.strip()[:300]}...")
+else:
+    st.info("Type a query and click Search.")
